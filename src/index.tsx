@@ -129,9 +129,7 @@ export const PivotTable: FC = () => {
       return [emptyRow];
     }
 
-    const uniqueMonths = [...new Set(transformedData.map((d) => d.Monat))]
-
-      .sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
+    const uniqueMonths = monthOrder; // Always use all 12 months
 
     const uniqueWorkers = [
       ...new Set(transformedData.map((d) => d.Mitarbeiter)),
@@ -316,10 +314,7 @@ export const PivotTable: FC = () => {
 
     const isEmpty = !transformedData.length;
 
-    const uniqueMonths = isEmpty
-      ? monthOrder
-      : [...new Set(transformedData.map((d) => d.Monat))]
-          .sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
+    const uniqueMonths = monthOrder; // Always use all 12 months
 
     const targetTypes = ["Urlaub", "Krank"];
 
