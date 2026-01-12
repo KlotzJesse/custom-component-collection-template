@@ -49,31 +49,22 @@ export const PivotTable: FC = () => {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
 
         .map((row: any) => {
-          const monthMap: Record<string, string> = {
-            "2025-01": "Januar",
-
-            "2025-02": "Februar",
-
-            "2025-03": "März",
-
-            "2025-04": "April",
-
-            "2025-05": "Mai",
-
-            "2025-06": "Juni",
-
-            "2025-07": "Juli",
-
-            "2025-08": "August",
-
-            "2025-09": "September",
-
-            "2025-10": "Oktober",
-
-            "2025-11": "November",
-
-            "2025-12": "Dezember",
+          // Year-agnostic month mapping - extracts just the month part (e.g., "01" from "2026-01")
+          const monthNumberMap: Record<string, string> = {
+            "01": "Januar",
+            "02": "Februar",
+            "03": "März",
+            "04": "April",
+            "05": "Mai",
+            "06": "Juni",
+            "07": "Juli",
+            "08": "August",
+            "09": "September",
+            "10": "Oktober",
+            "11": "November",
+            "12": "Dezember",
           };
+          const monthPart = row.month?.split("-")[1] || "";
 
           const absenceTypeMap: Record<string, string> = {
             Urlaub: "Urlaub",
@@ -90,7 +81,7 @@ export const PivotTable: FC = () => {
           return {
             Mitarbeiter: row.worker_name,
 
-            Monat: monthMap[row.month] || row.month,
+            Monat: monthNumberMap[monthPart] || row.month,
 
             Art: absenceTypeMap[row.absence_type] || row.absence_type,
 
@@ -107,8 +98,6 @@ export const PivotTable: FC = () => {
   // Create pivot data
 
   const pivotData = useMemo(() => {
-    if (!transformedData.length) return [];
-
     const monthOrder = [
       "Januar",
       "Februar",
@@ -124,11 +113,25 @@ export const PivotTable: FC = () => {
       "Dezember",
     ];
 
+    const targetTypes = ["Urlaub", "Krank"];
+
+    // If no transformed data, return empty placeholder row
+    if (!transformedData.length) {
+      const emptyRow: WorkerData = { Mitarbeiter: "Kein Mitarbeiter gefunden" };
+      monthOrder.forEach((month) => {
+        targetTypes.forEach((type) => {
+          emptyRow[`${month}_${type}`] = 0;
+        });
+      });
+      emptyRow["Total_Urlaub"] = 0;
+      emptyRow["Total_Krank"] = 0;
+      emptyRow["Total"] = 0;
+      return [emptyRow];
+    }
+
     const uniqueMonths = [...new Set(transformedData.map((d) => d.Monat))]
 
       .sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
-
-    const targetTypes = ["Urlaub", "Krank"];
 
     const uniqueWorkers = [
       ...new Set(transformedData.map((d) => d.Mitarbeiter)),
@@ -233,6 +236,15 @@ export const PivotTable: FC = () => {
     return [...pivotRows, totalsRow];
   }, [transformedData]);
 
+  // Extract the year from the data to use for employment period checks
+  const dataYear = useMemo(() => {
+    const firstRowWithMonth = (data as any[]).find((row: any) => row?.month);
+    if (firstRowWithMonth?.month) {
+      return firstRowWithMonth.month.split("-")[0];
+    }
+    return new Date().getFullYear().toString();
+  }, [data]);
+
   // Helper function to check if month is within worker's employment period
 
   const isMonthInEmploymentPeriod = (
@@ -244,36 +256,27 @@ export const PivotTable: FC = () => {
   ) => {
     if (!startDate && !endDate) return { isInPeriod: true, isDisabled: false };
 
-    const monthMap: Record<string, string> = {
-      Januar: "2025-01",
-
-      Februar: "2025-02",
-
-      März: "2025-03",
-
-      April: "2025-04",
-
-      Mai: "2025-05",
-
-      Juni: "2025-06",
-
-      Juli: "2025-07",
-
-      August: "2025-08",
-
-      September: "2025-09",
-
-      Oktober: "2025-10",
-
-      November: "2025-11",
-
-      Dezember: "2025-12",
+    // Dynamic month mapping using the year from the data
+    const monthToNumberMap: Record<string, string> = {
+      Januar: "01",
+      Februar: "02",
+      März: "03",
+      April: "04",
+      Mai: "05",
+      Juni: "06",
+      Juli: "07",
+      August: "08",
+      September: "09",
+      Oktober: "10",
+      November: "11",
+      Dezember: "12",
     };
 
-    const monthCode = monthMap[month];
+    const monthNumber = monthToNumberMap[month];
 
-    if (!monthCode) return { isInPeriod: true, isDisabled: false };
+    if (!monthNumber) return { isInPeriod: true, isDisabled: false };
 
+    const monthCode = `${dataYear}-${monthNumber}`;
     const monthDate = new Date(monthCode + "-01");
 
     const start = startDate ? new Date(startDate) : new Date("1900-01-01");
@@ -296,8 +299,6 @@ export const PivotTable: FC = () => {
   // Create columns with grouped headers using columnHelper
 
   const columns = useMemo(() => {
-    if (!pivotData.length) return [];
-
     const monthOrder = [
       "Januar",
       "Februar",
@@ -313,9 +314,12 @@ export const PivotTable: FC = () => {
       "Dezember",
     ];
 
-    const uniqueMonths = [...new Set(transformedData.map((d) => d.Monat))]
+    const isEmpty = !transformedData.length;
 
-      .sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
+    const uniqueMonths = isEmpty
+      ? monthOrder
+      : [...new Set(transformedData.map((d) => d.Monat))]
+          .sort((a, b) => monthOrder.indexOf(a) - monthOrder.indexOf(b));
 
     const targetTypes = ["Urlaub", "Krank"];
 
@@ -329,10 +333,11 @@ export const PivotTable: FC = () => {
 
         cell: (info) => {
           const isTotal = info.row.original.Mitarbeiter === "Summe";
+          const isEmptyPlaceholder = info.row.original.Mitarbeiter === "Kein Mitarbeiter gefunden";
 
           return (
             <div
-              className={`text-left font-medium text-gray-900 pl-3 pr-2 h-full flex items-center whitespace-nowrap ${!isTotal ? "group-hover:bg-[#009def] group-hover:text-white" : ""}`}
+              className={`text-left font-medium pl-3 pr-2 h-full flex items-center whitespace-nowrap ${isEmptyPlaceholder ? "text-gray-500" : "text-gray-900"} ${!isTotal && !isEmptyPlaceholder ? "group-hover:bg-[#009def] group-hover:text-white" : ""}`}
             >
               {info.getValue()}
             </div>
@@ -486,6 +491,8 @@ export const PivotTable: FC = () => {
     getCoreRowModel: getCoreRowModel(),
   });
 
+  const isEmpty = !data || (data as any[]).length === 0 || transformedData.length === 0;
+
   return (
     <div className="w-full h-full overflow-auto p-2 min-h-0">
       <table className="w-full border-collapse border border-gray-200 text-xs font-sans shadow-sm">
@@ -513,11 +520,12 @@ export const PivotTable: FC = () => {
         <tbody>
           {table.getRowModel().rows.map((row) => {
             const isTotal = row.original.Mitarbeiter === "Summe";
+            const isEmptyPlaceholder = row.original.Mitarbeiter === "Kein Mitarbeiter gefunden";
 
             return (
               <tr
                 key={row.id}
-                className={`h-8 group hover:bg-[#009def] hover:text-white ${isTotal ? "bg-blue-50" : ""}`}
+                className={`h-8 group ${!isEmptyPlaceholder ? "hover:bg-[#009def] hover:text-white" : ""} ${isTotal ? "bg-blue-50" : ""}`}
               >
                 {row.getVisibleCells().map((cell) => (
                   <td key={cell.id} className="border border-gray-200 p-0 h-8">
